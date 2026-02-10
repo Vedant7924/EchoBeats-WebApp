@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { MdLibraryMusic } from 'react-icons/md';
 
 const Signup = () => {
     const [username, setUsername] = useState('');
@@ -24,9 +25,21 @@ const Signup = () => {
     };
 
     return (
-        <div className="flex items-center justify-center h-screen bg-black">
-            <div className="bg-neutral-900 p-8 rounded-lg w-96 text-white text-center">
-                <h2 className="text-3xl font-bold mb-6 text-primary">Sign up</h2>
+        <div className="flex flex-col items-center justify-center h-screen bg-black">
+            <div
+                className="flex items-center gap-3 mb-8 cursor-pointer group"
+                onClick={() => navigate('/')}
+            >
+                <div className="bg-primary p-3 rounded-xl rotate-3 group-hover:rotate-0 transition-transform duration-300">
+                    <MdLibraryMusic className="text-black text-3xl" />
+                </div>
+                <h1 className="text-4xl font-black text-white tracking-tighter">
+                    Echo<span className="text-primary">Beats</span>
+                </h1>
+            </div>
+
+            <div className="bg-neutral-900 p-8 rounded-2xl w-96 text-white text-center shadow-2xl border border-neutral-800">
+                <h2 className="text-2xl font-bold mb-6">Create your account</h2>
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     <input
                         type="text"
