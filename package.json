@@ -1,0 +1,17 @@
+{
+    "name": "echobeats-root",
+    "version": "1.0.0",
+    "description": "EchoBeats Music Streaming App",
+    "scripts": {
+        "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+        "backend": "cd backend && npm run dev",
+        "frontend": "cd frontend && npm run dev",
+        "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+        "build": "cd frontend && npm install && npm run build",
+        "start": "cd backend && npm install && npm start",
+        "seed": "cd backend && node seeder.js"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}
