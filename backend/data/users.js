@@ -2,15 +2,15 @@ const bcrypt = require('bcryptjs');
 
 const users = [
     {
-        username: 'admin',
-        email: 'admin@example.com',
-        password: 'password123',
+        username: 'Vedant',
+        email: 'shindevedant752@gmail.com',
+        password: 'VED%407924',
         role: 'admin'
     },
     {
-        username: 'JohnDoe',
-        email: 'john@example.com',
-        password: 'password123',
+        username: 'Atharv',
+        email: 'patilatharv2829@gmail.com',
+        password: 'atharv2005',
         role: 'user'
     },
     {
