@@ -23,13 +23,13 @@ app.use('/api/users', userRoutes);
 app.use('/api/songs', songRoutes);
 app.use('/api/playlists', playlistRoutes);
 
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
     app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
     app.get('*', (req, res) =>
         res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'))
     );
-} else {
+} else if (!process.env.VERCEL) {
     app.get('/', (req, res) => {
         res.send('API is running...');
     });
@@ -39,10 +39,11 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-if (process.env.NODE_ENV !== 'test') {
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
         console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
     });
 }
 
 module.exports = app;
+
