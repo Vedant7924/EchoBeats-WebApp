@@ -7,6 +7,8 @@ const songsData = require('../data/songs');
 const generateToken = require('../utils/generateToken');
 const { validateEmail, validatePassword, validateUsername } = require('../utils/validation');
 
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 // Fallback seed array with ObjectIds
 const fallbackSongs = songsData.map((song, idx) => ({
     ...song,
@@ -254,44 +256,35 @@ const authUser = asyncHandler(async (req, res) => {
 
     const formattedEmail = email.toLowerCase().trim();
 
-    if (mongoose.connection.readyState !== 1) {
-        if (demoAccounts[formattedEmail] && password === 'password123') {
-            const demo = demoAccounts[formattedEmail];
-            return res.json({
-                ...demo,
-                token: generateToken(demo._id)
-            });
-        } else {
-            res.status(401);
-            throw new Error('Invalid email or password');
+    // 1. Try DB authentication if connected
+    if (mongoose.connection.readyState === 1) {
+        try {
+            const user = await User.findOne({ email: formattedEmail });
+            if (user && (await user.matchPassword(password))) {
+                return res.json({
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    role: user.role,
+                    token: generateToken(user._id)
+                });
+            }
+        } catch (err) {
+            console.error('DB login error:', err.message);
         }
     }
 
-    try {
-        const user = await User.findOne({ email: formattedEmail });
-        if (user && (await user.matchPassword(password))) {
-            return res.json({
-                _id: user._id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                token: generateToken(user._id)
-            });
-        } else {
-            res.status(401);
-            throw new Error('Invalid email or password');
-        }
-    } catch {
-        if (demoAccounts[formattedEmail] && password === 'password123') {
-            const demo = demoAccounts[formattedEmail];
-            return res.json({
-                ...demo,
-                token: generateToken(demo._id)
-            });
-        }
-        res.status(401);
-        throw new Error('Invalid email or password');
+    // 2. Demo accounts fallback (works on Vercel even if Atlas is unseeded!)
+    if (demoAccounts[formattedEmail] && password === 'password123') {
+        const demo = demoAccounts[formattedEmail];
+        return res.json({
+            ...demo,
+            token: generateToken(demo._id)
+        });
     }
+
+    res.status(401);
+    throw new Error('Invalid email or password');
 });
 
 // @desc    Get user profile
