@@ -2,15 +2,22 @@ const express = require('express');
 const router = express.Router();
 const {
     registerUser,
-    loginUser,
+    authUser,
     getUserProfile,
-    getUserAnalytics
+    getLikes,
+    getHistory,
+    getMoodDNA,
+    getTimeCapsule
 } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
+const { authLimiter } = require('../middleware/rateLimiter');
 
-router.post('/', registerUser);
-router.post('/login', loginUser);
+router.post('/register', authLimiter, registerUser);
+router.post('/login', authLimiter, authUser);
 router.get('/profile', protect, getUserProfile);
-router.get('/analytics', protect, getUserAnalytics);
+router.get('/likes', protect, getLikes);
+router.get('/history', protect, getHistory);
+router.get('/analytics/dna', protect, getMoodDNA);
+router.get('/timecapsule', protect, getTimeCapsule);
 
 module.exports = router;

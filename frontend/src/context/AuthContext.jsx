@@ -1,59 +1,69 @@
 import { createContext, useState, useEffect, useContext } from 'react';
-import axios from 'axios';
-import api from '../utils/api';
+import API from '../utils/api';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
 
-    useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-        setLoading(false);
-    }, []);
+  const [loading, setLoading] = useState(true);
 
-    const login = async (email, password) => {
+  // Validate token on load
+  useEffect(() => {
+    const verifyToken = async () => {
+      if (user && user.token) {
         try {
-            const { data } = await api.post('/users/login', { email, password });
-            localStorage.setItem('user', JSON.stringify(data));
-            setUser(data);
-            return { success: true };
-        } catch (error) {
-            return {
-                success: false,
-                message: error.response?.data?.message || 'Login failed'
-            };
+          const res = await API.get('/users/profile');
+          setUser(prev => ({ ...prev, ...res.data }));
+        } catch {
+          // Token invalid or expired
+          logout();
         }
+      }
+      setLoading(false);
     };
 
-    const register = async (username, email, password) => {
-        try {
-            const { data } = await api.post('/users', { username, email, password });
-            localStorage.setItem('user', JSON.stringify(data));
-            setUser(data);
-            return { success: true };
-        } catch (error) {
-            return {
-                success: false,
-                message: error.response?.data?.message || 'Registration failed'
-            };
-        }
+    verifyToken();
+
+    const handleGlobalLogout = () => {
+      logout();
     };
 
-    const logout = () => {
-        localStorage.removeItem('user');
-        setUser(null);
-    };
+    window.addEventListener('echobeats:logout', handleGlobalLogout);
+    return () => window.removeEventListener('echobeats:logout', handleGlobalLogout);
+  }, []);
 
-    return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
-            {children}
-        </AuthContext.Provider>
-    );
+  const login = async (email, password) => {
+    const res = await API.post('/users/login', { email, password });
+    setUser(res.data);
+    localStorage.setItem('user', JSON.stringify(res.data));
+    return res.data;
+  };
+
+  const signup = async (username, email, password) => {
+    const res = await API.post('/users/register', { username, email, password });
+    setUser(res.data);
+    localStorage.setItem('user', JSON.stringify(res.data));
+    return res.data;
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, signup, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => useContext(AuthContext);

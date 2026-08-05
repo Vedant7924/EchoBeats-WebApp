@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { usePlayer } from '../context/PlayerContext';
-import api from '../utils/api';
-import { FaPlay, FaPause, FaPlus } from 'react-icons/fa';
+import API from '../utils/api';
+import { Plus, Play, Music, FolderPlus, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 
 const Library = () => {
     const { user } = useAuth();
-    const { playSong } = usePlayer();
     const [playlists, setPlaylists] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -19,7 +17,7 @@ const Library = () => {
         const fetchPlaylists = async () => {
             setLoading(true);
             try {
-                const { data } = await api.get('/playlists');
+                const { data } = await API.get('/playlists');
                 setPlaylists(data);
             } catch (error) {
                 console.error("Error fetching playlists", error);
@@ -35,49 +33,95 @@ const Library = () => {
     }, [user]);
 
     const handleCreatePlaylist = async () => {
-        if (!newPlaylistName) return;
+        if (!newPlaylistName.trim()) return;
         try {
-            const { data } = await api.post('/playlists', { name: newPlaylistName, songs: [] });
+            const { data } = await API.post('/playlists', { name: newPlaylistName.trim(), songs: [] });
             setPlaylists([...playlists, data]);
             setShowModal(false);
             setNewPlaylistName('');
-            toast.success("Playlist created!");
+            toast.success("Playlist created! 🎵");
         } catch (error) {
             console.error("Create playlist error:", error);
             toast.error(error.response?.data?.message || "Failed to create playlist");
         }
     };
 
+    const handleDeletePlaylist = async (e, playlistId) => {
+        e.stopPropagation();
+        try {
+            await API.delete(`/playlists/${playlistId}`);
+            setPlaylists(prev => prev.filter(p => p._id !== playlistId));
+            toast.info("Playlist deleted");
+        } catch (error) {
+            toast.error("Failed to delete playlist");
+        }
+    };
+
     return (
-        <div className="p-8 text-white pb-24">
-            <div className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold">Your Library</h1>
+        <div className="space-y-8 pb-12">
+            {/* Header Hero */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-black text-white tracking-tight">Your Library</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">Manage your personal playlists and saved music collections</p>
+                </div>
                 <button
                     onClick={() => setShowModal(true)}
-                    className="flex items-center gap-2 bg-primary text-black font-bold py-2 px-4 rounded-full hover:scale-105 transition-transform"
+                    className="flex items-center gap-2 px-5 py-3 rounded-full bg-primary text-black font-bold text-sm hover:scale-105 transition-all shadow-xl shadow-primary/20"
                 >
-                    <FaPlus /> Create Playlist
+                    <Plus className="w-5 h-5" /> Create Playlist
                 </button>
             </div>
 
-            {loading ? <div className="text-gray-400">Loading library...</div> : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            {loading ? (
+                <div className="text-center py-16 text-gray-400">Loading library...</div>
+            ) : playlists.length === 0 ? (
+                <div className="glass-card rounded-3xl p-12 text-center space-y-4">
+                    <FolderPlus className="w-12 h-12 text-gray-600 mx-auto stroke-1" />
+                    <h3 className="text-lg font-bold text-white">No Playlists Created Yet</h3>
+                    <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                        Create custom playlists to organize your favorite tracks by mood, genre, or vibe.
+                    </p>
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="px-6 py-2.5 rounded-full bg-primary text-black font-bold text-xs hover:scale-105 transition-all"
+                    >
+                        Create Your First Playlist
+                    </button>
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
                     {playlists.map((playlist) => (
                         <div
                             key={playlist._id}
-                            className="bg-neutral-900 p-4 rounded-lg hover:bg-neutral-800 transition-colors group cursor-pointer"
                             onClick={() => navigate(`/playlist/${playlist._id}`)}
+                            className="group glass-card rounded-2xl p-4 cursor-pointer relative flex flex-col justify-between"
                         >
-                            <div className="relative mb-4">
-                                <div className="w-full aspect-square bg-gradient-to-br from-gray-700 to-gray-900 rounded-md shadow-lg flex items-center justify-center text-4xl text-gray-500">
-                                    🎵
-                                </div>
-                                <div className={`absolute bottom-2 right-2 bg-primary rounded-full p-3 shadow-lg transform transition-all duration-300 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0`}>
-                                    <FaPlay className="text-black pl-1" />
+                            <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-3 bg-gradient-to-tr from-surface via-card to-secondary border border-white/10 flex items-center justify-center">
+                                <Music className="w-12 h-12 text-primary/40 group-hover:scale-110 transition-transform" />
+
+                                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <div className="p-3 rounded-full bg-primary text-black shadow-lg">
+                                        <Play className="w-5 h-5 fill-current translate-x-0.5" />
+                                    </div>
                                 </div>
                             </div>
-                            <h3 className="font-bold truncate">{playlist.name}</h3>
-                            <p className="text-sm text-gray-400 truncate">By {user.username}</p>
+
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="truncate min-w-0">
+                                    <h3 className="text-sm font-bold text-white truncate group-hover:text-primary transition-colors">
+                                        {playlist.name}
+                                    </h3>
+                                    <p className="text-xs text-gray-400 mt-0.5">{playlist.songs?.length || 0} tracks</p>
+                                </div>
+                                <button
+                                    onClick={(e) => handleDeletePlaylist(e, playlist._id)}
+                                    className="p-1 text-gray-500 hover:text-rose-400 transition-colors"
+                                    title="Delete Playlist"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -85,28 +129,29 @@ const Library = () => {
 
             {/* Create Playlist Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-                    <div className="bg-neutral-800 p-8 rounded-lg w-96 text-center relative">
-                        <h2 className="text-2xl font-bold mb-4">Create Playlist</h2>
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+                    <div className="glass-panel border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl animate-in zoom-in-95">
+                        <h2 className="text-lg font-bold text-white">Create New Playlist</h2>
                         <input
                             type="text"
-                            placeholder="Playlist Name"
+                            placeholder="Playlist Title (e.g. Midnight Beats)"
                             value={newPlaylistName}
                             onChange={(e) => setNewPlaylistName(e.target.value)}
-                            className="w-full p-3 rounded mb-4 bg-neutral-700 text-white outline-none focus:ring-2 focus:ring-primary"
+                            className="w-full px-4 py-3 rounded-2xl bg-surface border border-white/10 text-white text-sm outline-none focus:border-primary"
+                            autoFocus
                         />
-                        <div className="flex justify-end gap-3">
+                        <div className="flex justify-end gap-3 pt-2">
                             <button
                                 onClick={() => setShowModal(false)}
-                                className="px-4 py-2 text-white hover:text-gray-300"
+                                className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleCreatePlaylist}
-                                className="bg-primary text-black font-bold px-6 py-2 rounded-full hover:scale-105 transition-transform"
+                                className="px-5 py-2.5 rounded-full bg-primary text-black font-bold text-xs hover:scale-105 transition-all"
                             >
-                                Create
+                                Create Playlist
                             </button>
                         </div>
                     </div>

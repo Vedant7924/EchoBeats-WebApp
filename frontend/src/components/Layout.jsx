@@ -1,4 +1,3 @@
-import React, { useContext } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
@@ -10,9 +9,12 @@ const Layout = () => {
     const { currentSong } = usePlayer();
     const location = useLocation();
 
-    // Check if user is authenticated
     if (loading) {
-        return <div className="h-screen bg-black flex items-center justify-center">Loading...</div>;
+        return (
+            <div className="h-screen bg-surface flex items-center justify-center text-gray-400 font-mono text-xs">
+                Loading EchoBeats Audio Engine...
+            </div>
+        );
     }
 
     if (!user) {
@@ -20,11 +22,11 @@ const Layout = () => {
     }
 
     return (
-        <div className="flex bg-black">
+        <div className="flex min-h-screen bg-surface selection:bg-primary selection:text-black">
             <Sidebar />
-            <div className="ml-64 w-full h-screen overflow-y-auto bg-gradient-to-b from-[#121212] to-black text-white p-6 pb-32">
+            <main className="ml-64 flex-1 min-h-screen overflow-y-auto bg-gradient-to-b from-[#0f0f1a] via-surface to-surface text-white p-6 sm:p-8 pb-32">
                 <Outlet />
-            </div>
+            </main>
             {currentSong && <Player />}
         </div>
     );

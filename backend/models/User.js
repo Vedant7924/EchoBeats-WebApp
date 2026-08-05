@@ -5,12 +5,15 @@ const UserSchema = new mongoose.Schema({
     username: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        trim: true
     },
     email: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        lowercase: true,
+        trim: true
     },
     password: {
         type: String,
@@ -27,17 +30,10 @@ const UserSchema = new mongoose.Schema({
             ref: 'Song'
         }
     ],
-    // For listening history analytics
-    listeningHistory: [
+    likedSongs: [
         {
-            song: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Song'
-            },
-            playedAt: {
-                type: Date,
-                default: Date.now
-            }
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Song'
         }
     ]
 }, { timestamps: true });
@@ -46,9 +42,10 @@ UserSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
 
-UserSchema.pre('save', async function (next) {
+// Fixed Mongoose 9 async pre-save hook (NO next argument)
+UserSchema.pre('save', async function () {
     if (!this.isModified('password')) {
-        next();
+        return;
     }
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);

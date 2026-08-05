@@ -1,94 +1,184 @@
-import React, { useRef, useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
-import { FaPlay, FaPause, FaStepBackward, FaStepForward, FaVolumeUp, FaVolumeMute } from 'react-icons/fa';
-import { MdSkipPrevious, MdSkipNext } from 'react-icons/md';
+import { useLiked } from '../hooks/useLiked';
+import NowPlaying from './NowPlaying';
+import Equalizer from './Equalizer';
+import {
+    Play,
+    Pause,
+    SkipBack,
+    SkipForward,
+    Maximize2,
+    Heart,
+    Volume2,
+    VolumeX,
+    Shuffle,
+    Repeat
+} from 'lucide-react';
+
+const formatTime = (secs) => {
+    if (!secs || isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+};
 
 const Player = () => {
     const {
         currentSong,
         isPlaying,
         togglePlay,
-        playNext,
-        playPrevious,
+        nextTrack,
+        prevTrack,
         currentTime,
         duration,
-        seek,
-        changeVolume,
-        volume
+        seekTo,
+        volume,
+        setVolume,
+        isShuffle,
+        setIsShuffle,
+        repeatMode,
+        setRepeatMode,
+        isExpanded,
+        setIsExpanded
     } = usePlayer();
 
-    const formatTime = (time) => {
-        if (!time) return '0:00';
-        const minutes = Math.floor(time / 60);
-        const seconds = Math.floor(time % 60);
-        return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-    };
+    const { isLiked, toggleLike } = useLiked();
 
     if (!currentSong) return null;
 
+    const liked = isLiked(currentSong._id);
+
     return (
-        <div className="fixed bottom-0 left-0 w-full bg-black text-white p-4 h-24 border-t border-gray-800 flex items-center justify-between z-50 player-bar">
-            {/* Song Info */}
-            <div className="flex items-center w-1/4">
-                <img
-                    src={currentSong.coverImage || 'https://placehold.co/60/191414/FFFFFF?text=Song'}
-                    alt="Cover"
-                    className="w-14 h-14 rounded mr-4 object-cover"
-                />
-                <div className="overflow-hidden">
-                    <h4 className="text-sm font-semibold truncate hover:underline cursor-pointer">{currentSong.title}</h4>
-                    <p className="text-xs text-gray-400 truncate hover:underline cursor-pointer">{currentSong.artist}</p>
+        <>
+            {/* Bottom Floating Glass Player */}
+            <div className="fixed bottom-0 left-0 md:left-64 right-0 z-40 bg-surface/95 backdrop-blur-xl border-t border-white/10 px-4 py-3 shadow-2xl">
+                <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+                    {/* Left Track Info */}
+                    <div className="flex items-center gap-3 w-1/4 min-w-0">
+                        <div
+                            onClick={() => setIsExpanded(true)}
+                            className="relative group cursor-pointer flex-shrink-0"
+                        >
+                            <img
+                                src={currentSong.coverArt}
+                                alt={currentSong.title}
+                                className="w-12 h-12 rounded-xl object-cover border border-white/10 group-hover:scale-105 transition-transform"
+                            />
+                            <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <Maximize2 className="w-4 h-4 text-white" />
+                            </div>
+                        </div>
+
+                        <div className="truncate min-w-0">
+                            <h4
+                                onClick={() => setIsExpanded(true)}
+                                className="text-sm font-bold text-white truncate cursor-pointer hover:text-primary transition-colors"
+                            >
+                                {currentSong.title}
+                            </h4>
+                            <p className="text-xs text-gray-400 truncate">{currentSong.artist}</p>
+                        </div>
+
+                        <button
+                            onClick={() => toggleLike(currentSong)}
+                            className={`p-1.5 rounded-lg transition-colors ml-1 flex-shrink-0 ${
+                                liked ? 'text-rose-500' : 'text-gray-400 hover:text-white'
+                            }`}
+                        >
+                            <Heart className={`w-4 h-4 ${liked ? 'fill-current' : ''}`} />
+                        </button>
+                    </div>
+
+                    {/* Center Controls & Progress Bar */}
+                    <div className="flex flex-col items-center gap-1.5 w-2/4 max-w-xl">
+                        <div className="flex items-center gap-5">
+                            <button
+                                onClick={() => setIsShuffle(!isShuffle)}
+                                className={`text-xs transition-colors ${
+                                    isShuffle ? 'text-primary' : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                <Shuffle className="w-4 h-4" />
+                            </button>
+
+                            <button onClick={prevTrack} className="text-gray-300 hover:text-white transition-colors">
+                                <SkipBack className="w-5 h-5" />
+                            </button>
+
+                            <button
+                                onClick={togglePlay}
+                                className="p-2.5 rounded-full bg-primary text-black hover:scale-105 transition-transform shadow-md shadow-primary/20"
+                            >
+                                {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
+                            </button>
+
+                            <button onClick={nextTrack} className="text-gray-300 hover:text-white transition-colors">
+                                <SkipForward className="w-5 h-5" />
+                            </button>
+
+                            <button
+                                onClick={() => setRepeatMode((repeatMode + 1) % 3)}
+                                className={`text-xs transition-colors relative ${
+                                    repeatMode > 0 ? 'text-primary' : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                <Repeat className="w-4 h-4" />
+                                {repeatMode === 2 && (
+                                    <span className="absolute -top-1 -right-1 text-[8px] bg-primary text-black rounded-full w-3 h-3 flex items-center justify-center font-bold">
+                                        1
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full flex items-center gap-2 text-[11px] font-mono text-gray-400">
+                            <span>{formatTime(currentTime)}</span>
+                            <input
+                                type="range"
+                                min={0}
+                                max={duration || 100}
+                                value={currentTime}
+                                onChange={(e) => seekTo(Number(e.target.value))}
+                                className="w-full"
+                            />
+                            <span>{formatTime(duration)}</span>
+                        </div>
+                    </div>
+
+                    {/* Right Tools (Volume & EQ & Expand) */}
+                    <div className="flex items-center justify-end gap-3 w-1/4">
+                        <Equalizer />
+
+                        <div className="hidden md:flex items-center gap-2 w-24">
+                            <button onClick={() => setVolume(volume === 0 ? 0.8 : 0)} className="text-gray-400 hover:text-white">
+                                {volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                            </button>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={volume}
+                                onChange={(e) => setVolume(Number(e.target.value))}
+                                className="w-full"
+                            />
+                        </div>
+
+                        <button
+                            onClick={() => setIsExpanded(true)}
+                            className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+                            title="Expand Player"
+                        >
+                            <Maximize2 className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* Controls */}
-            <div className="flex flex-col items-center w-2/4">
-                <div className="flex items-center gap-6 mb-2">
-                    <button className="text-gray-400 hover:text-white transition" title="Previous" onClick={playPrevious}>
-                        <MdSkipPrevious size={24} />
-                    </button>
-                    <button
-                        className="bg-white text-black rounded-full p-2 hover:scale-105 transition transform"
-                        onClick={togglePlay}
-                    >
-                        {isPlaying ? <FaPause size={16} /> : <FaPlay size={16} className="pl-0.5" />}
-                    </button>
-                    <button className="text-gray-400 hover:text-white transition" title="Next" onClick={playNext}>
-                        <MdSkipNext size={24} />
-                    </button>
-                </div>
-                <div className="w-full flex items-center gap-2 text-xs text-gray-400">
-                    <span>{formatTime(currentTime)}</span>
-                    <input
-                        type="range"
-                        min="0"
-                        max={duration || 0}
-                        value={currentTime}
-                        onChange={(e) => seek(e.target.value)}
-                        className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm"
-                        style={{ backgroundSize: `${(currentTime / duration) * 100}% 100%` }}
-                    />
-                    <span>{formatTime(duration)}</span>
-                </div>
-            </div>
-
-            {/* Volume */}
-            <div className="flex items-center justify-end w-1/4 gap-2">
-                <button onClick={() => changeVolume(volume === 0 ? 0.5 : 0)}>
-                    {volume === 0 ? <FaVolumeMute size={20} className="text-gray-400" /> : <FaVolumeUp size={20} className="text-gray-400 hover:text-white" />}
-                </button>
-                <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={volume}
-                    onChange={(e) => changeVolume(e.target.value)}
-                    className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                    style={{ backgroundSize: `${volume * 100}% 100%` }}
-                />
-            </div>
-        </div>
+            {/* Render Full-Screen Modal if Expanded */}
+            {isExpanded && <NowPlaying />}
+        </>
     );
 };
 

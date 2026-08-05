@@ -14,43 +14,63 @@ connectDB();
 
 const importData = async () => {
     try {
-        await User.deleteMany();
-        await Song.deleteMany();
-        await Playlist.deleteMany();
         await History.deleteMany();
+        await Playlist.deleteMany();
+        await Song.deleteMany();
+        await User.deleteMany();
 
-        const createdUsers = [];
-        for (const user of users) {
-            const newUser = await User.create(user);
-            createdUsers.push(newUser);
-        }
+        // Seed Users
+        const createdUsers = await User.create([
+            {
+                username: 'AdminUser',
+                email: 'admin@example.com',
+                password: 'password123',
+                role: 'admin'
+            },
+            {
+                username: 'JohnDoe',
+                email: 'john@example.com',
+                password: 'password123',
+                role: 'user'
+            },
+            {
+                username: 'JaneSmith',
+                email: 'jane@example.com',
+                password: 'password123',
+                role: 'user'
+            }
+        ]);
+
         const adminUser = createdUsers[0]._id;
 
-        const sampleSongs = songs.map((song) => {
+        // Seed Songs
+        const sampleSongs = songs.map(song => {
             return { ...song, user: adminUser };
         });
 
-        await Song.insertMany(sampleSongs);
+        const createdSongs = await Song.insertMany(sampleSongs);
 
-        console.log('Data Imported!');
+        console.log(`Data Seeded Successfully!`);
+        console.log(`- ${createdUsers.length} Users Created (admin@example.com / john@example.com / jane@example.com)`);
+        console.log(`- ${createdSongs.length} Songs Created`);
         process.exit();
     } catch (error) {
-        console.error(`${error}`);
+        console.error(`Error Seeding Data: ${error.message}`);
         process.exit(1);
     }
 };
 
 const destroyData = async () => {
     try {
-        await User.deleteMany();
-        await Song.deleteMany();
-        await Playlist.deleteMany();
         await History.deleteMany();
+        await Playlist.deleteMany();
+        await Song.deleteMany();
+        await User.deleteMany();
 
         console.log('Data Destroyed!');
         process.exit();
     } catch (error) {
-        console.error(`${error}`);
+        console.error(`Error Destroying Data: ${error.message}`);
         process.exit(1);
     }
 };

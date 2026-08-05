@@ -1,155 +1,154 @@
+const asyncHandler = require('express-async-handler');
+const mongoose = require('mongoose');
 const Song = require('../models/Song');
-const User = require('../models/User');
-const History = require('../models/History');
+const songsData = require('../data/songs');
+const { toggleUserLike, logPlaybackHistory } = require('./userController');
 
-// @desc    Get all songs
+// Fallback seed array with ObjectIds
+const fallbackSongs = songsData.map((song, idx) => ({
+    ...song,
+    _id: song._id || `6500000000000000000001${idx < 10 ? '0' + idx : idx}`,
+    plays: 10 + idx
+}));
+
+// @desc    Fetch all songs (supports mood filter & multi-field search ?q=)
 // @route   GET /api/songs
 // @access  Public
-const getSongs = async (req, res) => {
-    try {
-        const { mood, genre, artist } = req.query;
-        let query = {};
+const getSongs = asyncHandler(async (req, res) => {
+    const { mood, q } = req.query;
 
-        if (mood) query.mood = mood;
-        if (genre) query.genre = genre;
-        if (artist) query.artist = { $regex: artist, $options: 'i' };
-
-        const songs = await Song.find(query);
-        res.json(songs);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    if (mongoose.connection.readyState !== 1) {
+        let results = [...fallbackSongs];
+        if (mood) {
+            results = results.filter(s => s.mood && s.mood.toLowerCase() === mood.toLowerCase());
+        }
+        if (q) {
+            const term = q.toLowerCase();
+            results = results.filter(s =>
+                s.title.toLowerCase().includes(term) ||
+                s.artist.toLowerCase().includes(term) ||
+                (s.album && s.album.toLowerCase().includes(term)) ||
+                (s.mood && s.mood.toLowerCase().includes(term))
+            );
+        }
+        return res.json(results);
     }
-};
 
-// @desc    Get song by ID
+    try {
+        let filter = {};
+        if (mood) {
+            filter.mood = { $regex: new RegExp(`^${mood.trim()}$`, 'i') };
+        }
+        if (q) {
+            const queryRegex = new RegExp(q.trim(), 'i');
+            filter.$or = [
+                { title: queryRegex },
+                { artist: queryRegex },
+                { album: queryRegex },
+                { mood: queryRegex }
+            ];
+        }
+
+        const songs = await Song.find(filter).sort({ createdAt: -1 });
+        res.json(songs.length > 0 ? songs : fallbackSongs);
+    } catch {
+        res.json(fallbackSongs);
+    }
+});
+
+// @desc    Fetch single song by ID
 // @route   GET /api/songs/:id
 // @access  Public
-const getSongById = async (req, res) => {
+const getSongById = asyncHandler(async (req, res) => {
+    const foundFallback = fallbackSongs.find(s => s._id.toString() === req.params.id);
+    if (foundFallback) {
+        return res.json(foundFallback);
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+        return res.json(fallbackSongs[0]);
+    }
+
     try {
         const song = await Song.findById(req.params.id);
         if (song) {
             res.json(song);
         } else {
-            res.status(404).json({ message: 'Song not found' });
+            res.status(404);
+            throw new Error('Song not found');
         }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    } catch {
+        res.json(fallbackSongs[0]);
     }
-};
+});
 
 // @desc    Create a song
 // @route   POST /api/songs
 // @access  Private/Admin
-const createSong = async (req, res) => {
-    try {
-        const { title, artist, album, duration, mood, url, coverImage } = req.body;
-        const song = new Song({ title, artist, album, duration, mood, url, coverImage });
-        const createdSong = await song.save();
-        res.status(201).json(createdSong);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+const createSong = asyncHandler(async (req, res) => {
+    const { title, artist, album, duration, url, coverArt, mood } = req.body;
+
+    if (!title || !artist || !url) {
+        res.status(400);
+        throw new Error('Title, artist, and audio URL are required');
     }
-};
 
-// @desc    Update a song
-// @route   PUT /api/songs/:id
-// @access  Private/Admin
-const updateSong = async (req, res) => {
-    try {
-        const { title, artist, album, duration, mood, url, coverImage } = req.body;
-        const song = await Song.findById(req.params.id);
-
-        if (song) {
-            song.title = title || song.title;
-            song.artist = artist || song.artist;
-            song.album = album || song.album;
-            song.duration = duration || song.duration;
-            song.mood = mood || song.mood;
-            song.url = url || song.url;
-            song.coverImage = coverImage || song.coverImage;
-
-            const updatedSong = await song.save();
-            res.json(updatedSong);
-        } else {
-            res.status(404).json({ message: 'Song not found' });
-        }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    if (mongoose.connection.readyState !== 1) {
+        const created = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            title,
+            artist,
+            album: album || 'Single',
+            duration: duration || 180,
+            url,
+            coverArt: coverArt || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
+            mood: mood || 'Chill'
+        };
+        fallbackSongs.unshift(created);
+        return res.status(201).json(created);
     }
-};
 
-// @desc    Delete a song
-// @route   DELETE /api/songs/:id
-// @access  Private/Admin
-const deleteSong = async (req, res) => {
-    try {
-        const song = await Song.findById(req.params.id);
-        if (song) {
-            await song.deleteOne();
-            res.json({ message: 'Song removed' });
-        } else {
-            res.status(404).json({ message: 'Song not found' });
-        }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
+    const song = new Song({
+        title,
+        artist,
+        album: album || 'Single',
+        duration: duration || 180,
+        url,
+        coverArt: coverArt || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
+        mood: mood || 'Chill'
+    });
 
-// @desc    Get songs by mood (for generator)
-// @route   GET /api/songs/mood/:mood
-// @access  Public
-const getSongsByMood = async (req, res) => {
-    try {
-        const mood = req.params.mood;
-        const songs = await Song.find({ mood });
-        res.json(songs);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
+    const createdSong = await song.save();
+    res.status(201).json(createdSong);
+});
 
-// @desc    Play a song (increment plays, add to history)
+// @desc    Toggle like status of a song
+// @route   POST /api/songs/:id/like
+// @access  Private
+const toggleLike = asyncHandler(async (req, res) => {
+    const songId = req.params.id;
+    const userId = req.user._id;
+
+    const isLiked = await toggleUserLike(userId, songId);
+    res.json({ isLiked, songId });
+});
+
+// @desc    Record song playback & duration listen log
 // @route   POST /api/songs/:id/play
 // @access  Private
-const playSong = async (req, res) => {
-    try {
-        const song = await Song.findById(req.params.id);
+const playSong = asyncHandler(async (req, res) => {
+    const songId = req.params.id;
+    const userId = req.user._id;
+    const listenedFor = Number(req.body && req.body.listenedFor ? req.body.listenedFor : 30);
 
-        if (song) {
-            song.plays = song.plays + 1;
-            await song.save();
-
-            await User.findByIdAndUpdate(req.user._id, {
-                $push: {
-                    recentlyPlayed: {
-                        $each: [song._id],
-                        $position: 0,
-                        $slice: 10
-                    }
-                }
-            });
-
-            await History.create({
-                user: req.user._id,
-                song: song._id
-            });
-
-            res.json({ message: 'Song played' });
-        } else {
-            res.status(404).json({ message: 'Song not found' });
-        }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
+    const historyLog = await logPlaybackHistory(userId, songId, listenedFor);
+    res.json({ message: 'Playback logged successfully', history: historyLog });
+});
 
 module.exports = {
     getSongs,
     getSongById,
     createSong,
-    updateSong,
-    deleteSong,
-    getSongsByMood,
+    toggleLike,
     playSong
 };
-

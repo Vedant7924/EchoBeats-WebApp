@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import api from '../utils/api';
+import { useState, useEffect } from 'react';
+import API from '../utils/api';
 import { toast } from 'react-toastify';
+import { Plus, X, FolderPlus } from 'lucide-react';
 
-const AddToPlaylistModal = ({ songId, onClose }) => {
+const AddToPlaylistModal = ({ song, onClose }) => {
     const [playlists, setPlaylists] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    const songId = song._id || song;
 
     useEffect(() => {
         const fetchPlaylists = async () => {
             try {
-                const { data } = await api.get('/playlists');
+                const { data } = await API.get('/playlists');
                 setPlaylists(data);
             } catch (error) {
                 toast.error("Failed to load playlists");
@@ -20,40 +23,57 @@ const AddToPlaylistModal = ({ songId, onClose }) => {
         fetchPlaylists();
     }, []);
 
-    const addToPlaylist = async (playlistId) => {
+    const addToPlaylist = async (playlist) => {
         try {
-            await api.post(`/playlists/${playlistId}/songs`, { songId });
-            toast.success("Added to playlist");
+            const existingSongIds = (playlist.songs || []).map(s => s._id || s);
+            if (existingSongIds.includes(songId)) {
+                toast.info(`Track is already in "${playlist.name}"`);
+                onClose();
+                return;
+            }
+
+            const updatedSongs = [...existingSongIds, songId];
+            await API.put(`/playlists/${playlist._id}`, { songs: updatedSongs });
+            toast.success(`Added "${song.title || 'Track'}" to "${playlist.name}" 🎵`);
             onClose();
         } catch (error) {
-            toast.error(error.response?.data?.message || "Failed to add song");
+            toast.error(error.response?.data?.message || "Failed to add song to playlist");
         }
     };
 
     return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="bg-neutral-800 p-6 rounded-lg w-80 max-h-[80vh] overflow-y-auto">
-                <h2 className="text-xl font-bold mb-4 text-white">Add to Playlist</h2>
-                {loading ? <div className="text-gray-400">Loading...</div> : (
-                    <ul className="space-y-2">
-                        {playlists.map(playlist => (
-                            <li
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+            <div className="glass-panel border border-white/10 rounded-3xl p-6 w-full max-w-sm space-y-4 shadow-2xl animate-in zoom-in-95">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                    <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <FolderPlus className="w-4 h-4 text-primary" /> Add to Playlist
+                    </h2>
+                    <button onClick={onClose} className="p-1 text-gray-400 hover:text-white">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                {loading ? (
+                    <div className="text-center py-8 text-gray-400 text-xs">Loading playlists...</div>
+                ) : (
+                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                        {playlists.map((playlist) => (
+                            <div
                                 key={playlist._id}
-                                className="p-3 bg-neutral-700 hover:bg-neutral-600 rounded cursor-pointer text-white flex justify-between items-center"
-                                onClick={() => addToPlaylist(playlist._id)}
+                                onClick={() => addToPlaylist(playlist)}
+                                className="flex items-center justify-between p-3 rounded-2xl glass-card hover:border-primary/40 cursor-pointer transition-all"
                             >
-                                <span className="truncate">{playlist.name}</span>
-                            </li>
+                                <span className="text-xs font-bold text-white truncate">{playlist.name}</span>
+                                <Plus className="w-4 h-4 text-primary" />
+                            </div>
                         ))}
-                        {playlists.length === 0 && <li className="text-gray-400">No playlists found</li>}
-                    </ul>
+                        {playlists.length === 0 && (
+                            <p className="text-xs text-gray-400 text-center py-6">
+                                No playlists found. Create one in your Library!
+                            </p>
+                        )}
+                    </div>
                 )}
-                <button
-                    onClick={onClose}
-                    className="mt-4 w-full py-2 text-gray-400 hover:text-white border border-gray-600 rounded"
-                >
-                    Cancel
-                </button>
             </div>
         </div>
     );
