@@ -13,16 +13,21 @@ jobs:
 
     steps:
       - name: Checkout Codebase
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js v22
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
-      - name: Install Root & Monorepo Dependencies
-        run: npm run install-all
+      - name: Install Monorepo Dependencies
+        run: |
+          cd backend && npm ci
+          cd ../frontend && npm ci
 
       - name: Run Backend Integration Test Suite
         run: |
