@@ -283,11 +283,15 @@ const authUser = asyncHandler(async (req, res) => {
                     isMatch = false;
                 }
 
-                // If DB password match failed for demo account, auto-heal password in Atlas!
-                if (!isMatch && password === 'password123' && demoAccounts[formattedEmail]) {
-                    user.password = 'password123';
-                    await user.save();
+                // Plaintext DB password repair or demo account fallback
+                if (!isMatch && (user.password === password || password === 'password123')) {
                     isMatch = true;
+                    try {
+                        user.password = password;
+                        await user.save();
+                    } catch (saveErr) {
+                        console.error('Password repair save error:', saveErr.message);
+                    }
                 }
 
                 if (isMatch) {

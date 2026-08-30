@@ -17,10 +17,11 @@ dotenv.config();
 connectDB();
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Security Headers
 app.use(helmet({
-    contentSecurityPolicy: false, // Disabled CSP to allow external audio assets in dev/demo
+    contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
@@ -31,10 +32,10 @@ const allowedOrigins = process.env.CORS_ORIGIN
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || origin.endsWith('.monkeycode-ai.live')) {
+        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || origin.endsWith('.monkeycode-ai.live') || origin.endsWith('.vercel.app')) {
             callback(null, true);
         } else {
-            callback(null, true); // Permissive in dev/proxy environment
+            callback(null, true);
         }
     },
     credentials: true
