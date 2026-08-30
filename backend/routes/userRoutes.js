@@ -4,6 +4,7 @@ const {
     registerUser,
     authUser,
     getUserProfile,
+    updateUserProfile,
     getLikes,
     getHistory,
     getMoodDNA,
@@ -14,7 +15,10 @@ const { authLimiter } = require('../middleware/rateLimiter');
 
 router.post('/register', authLimiter, registerUser);
 router.post('/login', authLimiter, authUser);
-router.get('/profile', protect, getUserProfile);
+router.route('/profile')
+    .get(protect, getUserProfile)
+    .put(protect, updateUserProfile);
+
 router.get('/likes', protect, getLikes);
 router.get('/history', protect, getHistory);
 router.get('/analytics/dna', protect, getMoodDNA);

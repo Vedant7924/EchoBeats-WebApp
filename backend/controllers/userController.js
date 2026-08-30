@@ -1,13 +1,13 @@
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const History = require('../models/History');
 const Song = require('../models/Song');
 const songsData = require('../data/songs');
 const generateToken = require('../utils/generateToken');
-const { validateEmail, validatePassword, validateUsername } = require('../utils/validation');
-
-const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+const { validateEmail, validatePassword, validateUsername, isValidObjectId } = require('../utils/validation');
+const { registerUserInAuthMap } = require('../middleware/authMiddleware');
 
 // Fallback seed array with ObjectIds
 const fallbackSongs = songsData.map((song, idx) => ({
@@ -22,6 +22,20 @@ const memoryHistoryStore = [];   // Array of { _id, user, song, listenedFor, pla
 
 const JOHN_ID = '650000000000000000000002';
 const ADMIN_ID = '650000000000000000000001';
+const JANE_ID = '650000000000000000000003';
+
+// Pre-hashed default password for test accounts
+const DEFAULT_HASH = bcrypt.hashSync('password123', 10);
+
+// In-memory user registry to ensure registered users and password updates survive restarts/fallback switches
+const userRegistry = new Map([
+    ['admin@example.com', { _id: ADMIN_ID, username: 'AdminUser', email: 'admin@example.com', passwordHash: DEFAULT_HASH, role: 'admin' }],
+    ['john@example.com', { _id: JOHN_ID, username: 'JohnDoe', email: 'john@example.com', passwordHash: DEFAULT_HASH, role: 'user' }],
+    ['jane@example.com', { _id: JANE_ID, username: 'JaneSmith', email: 'jane@example.com', passwordHash: DEFAULT_HASH, role: 'user' }]
+]);
+
+// Register default accounts in auth middleware map
+userRegistry.forEach(user => registerUserInAuthMap(user));
 
 // Initial pre-seeded likes
 memoryLikesMap.set(JOHN_ID, new Set([fallbackSongs[0]._id.toString(), fallbackSongs[1]._id.toString(), fallbackSongs[4]._id.toString()]));
@@ -107,13 +121,11 @@ const logPlaybackHistory = async (userId, songId, listenedFor = 0) => {
     const strUserId = userId.toString();
     const strSongId = songId.toString();
 
-    // 1. Locate song object from fallback list
     let songObj = fallbackSongs.find(s => s._id.toString() === strSongId);
     if (!songObj) {
         songObj = fallbackSongs[0];
     }
 
-    // 2. Push to memory store immediately
     const historyItem = {
         _id: new mongoose.Types.ObjectId().toString(),
         user: strUserId,
@@ -123,7 +135,6 @@ const logPlaybackHistory = async (userId, songId, listenedFor = 0) => {
     };
     memoryHistoryStore.unshift(historyItem);
 
-    // 3. Save to MongoDB if connected
     if (mongoose.connection.readyState === 1) {
         try {
             let songDoc = await Song.findById(songId);
@@ -163,28 +174,6 @@ const logPlaybackHistory = async (userId, songId, listenedFor = 0) => {
     return historyItem;
 };
 
-// Fallback Demo Accounts
-const demoAccounts = {
-    'admin@example.com': {
-        _id: ADMIN_ID,
-        username: 'AdminUser',
-        email: 'admin@example.com',
-        role: 'admin'
-    },
-    'john@example.com': {
-        _id: JOHN_ID,
-        username: 'JohnDoe',
-        email: 'john@example.com',
-        role: 'user'
-    },
-    'jane@example.com': {
-        _id: '650000000000000000000003',
-        username: 'JaneSmith',
-        email: 'jane@example.com',
-        role: 'user'
-    }
-};
-
 // @desc    Register a new user
 // @route   POST /api/users/register
 // @access  Public
@@ -206,41 +195,62 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new Error('Password must be at least 6 characters long');
     }
 
-    if (mongoose.connection.readyState !== 1) {
-        const newUser = {
-            _id: new mongoose.Types.ObjectId().toString(),
-            username,
-            email: email.toLowerCase(),
-            role: 'user',
-            token: generateToken(JOHN_ID)
-        };
-        return res.status(201).json(newUser);
+    const formattedEmail = email.toLowerCase().trim();
+    const trimmedUsername = username.trim();
+
+    // Check memory registry duplicate
+    if (userRegistry.has(formattedEmail)) {
+        res.status(409);
+        throw new Error('User with this email already exists');
     }
 
-    const userExists = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username }] });
-    if (userExists) {
-        res.status(400);
-        throw new Error('User with this email or username already exists');
-    }
+    let newUserPayload;
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
 
-    const user = await User.create({
-        username,
-        email: email.toLowerCase(),
-        password
-    });
+    if (mongoose.connection.readyState === 1) {
+        const userExists = await User.findOne({ $or: [{ email: formattedEmail }, { username: trimmedUsername }] });
+        if (userExists) {
+            res.status(409);
+            throw new Error('User with this email or username already exists');
+        }
 
-    if (user) {
-        res.status(201).json({
-            _id: user._id,
+        const user = await User.create({
+            username: trimmedUsername,
+            email: formattedEmail,
+            password
+        });
+
+        newUserPayload = {
+            _id: user._id.toString(),
             username: user.username,
             email: user.email,
             role: user.role,
             token: generateToken(user._id)
-        });
+        };
     } else {
-        res.status(400);
-        throw new Error('Invalid user data provided');
+        const newId = new mongoose.Types.ObjectId().toString();
+        newUserPayload = {
+            _id: newId,
+            username: trimmedUsername,
+            email: formattedEmail,
+            role: 'user',
+            token: generateToken(newId)
+        };
     }
+
+    // Save in userRegistry and authMap so login & token auth survive across sessions
+    const regUser = {
+        _id: newUserPayload._id,
+        username: newUserPayload.username,
+        email: newUserPayload.email,
+        passwordHash,
+        role: newUserPayload.role
+    };
+    userRegistry.set(formattedEmail, regUser);
+    registerUserInAuthMap(regUser);
+
+    res.status(201).json(newUserPayload);
 });
 
 // @desc    Authenticate user & get token
@@ -251,7 +261,7 @@ const authUser = asyncHandler(async (req, res) => {
 
     if (!validateEmail(email) || !password) {
         res.status(400);
-        throw new Error('Invalid email or password');
+        throw new Error('Please provide valid email and password');
     }
 
     const formattedEmail = email.toLowerCase().trim();
@@ -261,26 +271,36 @@ const authUser = asyncHandler(async (req, res) => {
         try {
             const user = await User.findOne({ email: formattedEmail });
             if (user && (await user.matchPassword(password))) {
-                return res.json({
-                    _id: user._id,
+                const payload = {
+                    _id: user._id.toString(),
                     username: user.username,
                     email: user.email,
                     role: user.role,
                     token: generateToken(user._id)
-                });
+                };
+                registerUserInAuthMap(payload);
+                return res.json(payload);
             }
         } catch (err) {
             console.error('DB login error:', err.message);
         }
     }
 
-    // 2. Demo accounts fallback (works on Vercel even if Atlas is unseeded!)
-    if (demoAccounts[formattedEmail] && password === 'password123') {
-        const demo = demoAccounts[formattedEmail];
-        return res.json({
-            ...demo,
-            token: generateToken(demo._id)
-        });
+    // 2. Persistent User Registry & Demo Accounts Fallback
+    const regUser = userRegistry.get(formattedEmail);
+    if (regUser) {
+        const isMatch = await bcrypt.compare(password, regUser.passwordHash);
+        if (isMatch) {
+            const payload = {
+                _id: regUser._id,
+                username: regUser.username,
+                email: regUser.email,
+                role: regUser.role,
+                token: generateToken(regUser._id)
+            };
+            registerUserInAuthMap(payload);
+            return res.json(payload);
+        }
     }
 
     res.status(401);
@@ -314,13 +334,87 @@ const getUserProfile = asyncHandler(async (req, res) => {
         }
     }
 
-    const demo = demoAccounts[req.user.email] || {
+    const regUser = Array.from(userRegistry.values()).find(u => u._id === strUserId || u.email === req.user.email);
+    res.json({
         _id: strUserId,
-        username: req.user.username || 'User',
-        email: req.user.email || 'user@example.com',
-        role: 'user'
+        username: req.user.username || (regUser ? regUser.username : 'User'),
+        email: req.user.email || (regUser ? regUser.email : 'user@example.com'),
+        role: req.user.role || 'user',
+        recentlyPlayed: [],
+        likedSongs: []
+    });
+});
+
+// @desc    Update user profile & password
+// @route   PUT /api/users/profile
+// @access  Private
+const updateUserProfile = asyncHandler(async (req, res) => {
+    const { username, email, password } = req.body;
+    const strUserId = req.user._id.toString();
+
+    let updatedUsername = req.user.username;
+    let updatedEmail = req.user.email;
+
+    if (username && !validateUsername(username)) {
+        res.status(400);
+        throw new Error('Username must be between 2 and 30 characters');
+    }
+    if (email && !validateEmail(email)) {
+        res.status(400);
+        throw new Error('Please provide a valid email address');
+    }
+    if (password && !validatePassword(password)) {
+        res.status(400);
+        throw new Error('Password must be at least 6 characters long');
+    }
+
+    if (username) updatedUsername = username.trim();
+    if (email) updatedEmail = email.toLowerCase().trim();
+
+    let newHash = null;
+    if (password) {
+        const salt = await bcrypt.genSalt(10);
+        newHash = await bcrypt.hash(password, salt);
+    }
+
+    // Update DB if connected
+    if (mongoose.connection.readyState === 1) {
+        try {
+            const user = await User.findById(req.user._id);
+            if (user) {
+                user.username = updatedUsername;
+                user.email = updatedEmail;
+                if (password) user.password = password;
+                await user.save();
+            }
+        } catch (err) {
+            console.error('DB update profile error:', err.message);
+        }
+    }
+
+    // Update userRegistry & AuthMap
+    const existing = userRegistry.get(req.user.email) || Array.from(userRegistry.values()).find(u => u._id === strUserId);
+    const updatedRecord = {
+        _id: strUserId,
+        username: updatedUsername,
+        email: updatedEmail,
+        passwordHash: newHash || (existing ? existing.passwordHash : DEFAULT_HASH),
+        role: req.user.role || 'user'
     };
-    res.json(demo);
+
+    if (req.user.email && req.user.email !== updatedEmail) {
+        userRegistry.delete(req.user.email);
+    }
+    userRegistry.set(updatedEmail, updatedRecord);
+    registerUserInAuthMap(updatedRecord);
+
+    res.json({
+        _id: strUserId,
+        username: updatedUsername,
+        email: updatedEmail,
+        role: req.user.role || 'user',
+        token: generateToken(strUserId)
+    });
 });
 
 // @desc    Get user liked songs
@@ -328,10 +422,8 @@ const getUserProfile = asyncHandler(async (req, res) => {
 // @access  Private
 const getLikes = asyncHandler(async (req, res) => {
     const strUserId = req.user._id.toString();
-
     let resultSongs = [];
 
-    // 1. Try fetching from MongoDB
     if (mongoose.connection.readyState === 1) {
         try {
             const user = await User.findById(req.user._id).populate('likedSongs');
@@ -343,7 +435,6 @@ const getLikes = asyncHandler(async (req, res) => {
         }
     }
 
-    // 2. If DB was empty or disconnected, merge with Memory Store
     if (resultSongs.length === 0) {
         const likedSet = memoryLikesMap.get(strUserId) || new Set();
         resultSongs = fallbackSongs.filter(s => likedSet.has(s._id.toString()));
@@ -359,11 +450,9 @@ const getHistory = asyncHandler(async (req, res) => {
     const strUserId = req.user._id.toString();
     let combinedHistory = [];
 
-    // 1. Memory Store items for this user
     const memoryItems = memoryHistoryStore.filter(h => h.user.toString() === strUserId);
     combinedHistory.push(...memoryItems);
 
-    // 2. MongoDB items for this user if connected
     if (mongoose.connection.readyState === 1) {
         try {
             const dbHistory = await History.find({ user: req.user._id })
@@ -387,7 +476,6 @@ const getHistory = asyncHandler(async (req, res) => {
         }
     }
 
-    // 3. Ensure all items have valid song objects and sort by playedAt descending
     const resolvedHistory = combinedHistory
         .map(item => {
             let songObj = item.song;
@@ -522,6 +610,7 @@ module.exports = {
     registerUser,
     authUser,
     getUserProfile,
+    updateUserProfile,
     getLikes,
     getHistory,
     getMoodDNA,

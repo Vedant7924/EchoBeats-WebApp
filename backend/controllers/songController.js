@@ -11,6 +11,8 @@ const fallbackSongs = songsData.map((song, idx) => ({
     plays: 10 + idx
 }));
 
+const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // @desc    Fetch all songs (supports mood filter & multi-field search ?q=)
 // @route   GET /api/songs
 // @access  Public
@@ -19,11 +21,11 @@ const getSongs = asyncHandler(async (req, res) => {
 
     if (mongoose.connection.readyState !== 1) {
         let results = [...fallbackSongs];
-        if (mood) {
-            results = results.filter(s => s.mood && s.mood.toLowerCase() === mood.toLowerCase());
+        if (mood && typeof mood === 'string') {
+            results = results.filter(s => s.mood && s.mood.toLowerCase() === mood.trim().toLowerCase());
         }
-        if (q) {
-            const term = q.toLowerCase();
+        if (q && typeof q === 'string') {
+            const term = q.trim().toLowerCase();
             results = results.filter(s =>
                 s.title.toLowerCase().includes(term) ||
                 s.artist.toLowerCase().includes(term) ||
@@ -36,11 +38,12 @@ const getSongs = asyncHandler(async (req, res) => {
 
     try {
         let filter = {};
-        if (mood) {
-            filter.mood = { $regex: new RegExp(`^${mood.trim()}$`, 'i') };
+        if (mood && typeof mood === 'string' && mood.trim()) {
+            filter.mood = { $regex: new RegExp(`^${escapeRegex(mood.trim())}$`, 'i') };
         }
-        if (q) {
-            const queryRegex = new RegExp(q.trim(), 'i');
+        if (q && typeof q === 'string' && q.trim()) {
+            const safeTerm = escapeRegex(q.trim());
+            const queryRegex = new RegExp(safeTerm, 'i');
             filter.$or = [
                 { title: queryRegex },
                 { artist: queryRegex },
@@ -96,26 +99,26 @@ const createSong = asyncHandler(async (req, res) => {
     if (mongoose.connection.readyState !== 1) {
         const created = {
             _id: new mongoose.Types.ObjectId().toString(),
-            title,
-            artist,
-            album: album || 'Single',
-            duration: duration || 180,
-            url,
-            coverArt: coverArt || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
-            mood: mood || 'Chill'
+            title: String(title).trim(),
+            artist: String(artist).trim(),
+            album: album ? String(album).trim() : 'Single',
+            duration: Number(duration) || 180,
+            url: String(url).trim(),
+            coverArt: coverArt ? String(coverArt).trim() : 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
+            mood: mood ? String(mood).trim() : 'Chill'
         };
         fallbackSongs.unshift(created);
         return res.status(201).json(created);
     }
 
     const song = new Song({
-        title,
-        artist,
-        album: album || 'Single',
-        duration: duration || 180,
-        url,
-        coverArt: coverArt || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
-        mood: mood || 'Chill'
+        title: String(title).trim(),
+        artist: String(artist).trim(),
+        album: album ? String(album).trim() : 'Single',
+        duration: Number(duration) || 180,
+        url: String(url).trim(),
+        coverArt: coverArt ? String(coverArt).trim() : 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80',
+        mood: mood ? String(mood).trim() : 'Chill'
     });
 
     const createdSong = await song.save();
@@ -130,7 +133,7 @@ const toggleLike = asyncHandler(async (req, res) => {
     const userId = req.user._id;
 
     const isLiked = await toggleUserLike(userId, songId);
-    res.json({ isLiked, songId });
+    res.json({ success: true, isLiked, songId });
 });
 
 // @desc    Record song playback & duration listen log
@@ -139,10 +142,14 @@ const toggleLike = asyncHandler(async (req, res) => {
 const playSong = asyncHandler(async (req, res) => {
     const songId = req.params.id;
     const userId = req.user._id;
-    const listenedFor = Number(req.body && req.body.listenedFor ? req.body.listenedFor : 30);
+    let listenedFor = Number(req.body && req.body.listenedFor ? req.body.listenedFor : 30);
+
+    // Enforce bounds: min 1 second, max 3600 seconds (prevent negative or impossible duration)
+    if (isNaN(listenedFor) || listenedFor < 1) listenedFor = 1;
+    if (listenedFor > 3600) listenedFor = 3600;
 
     const historyLog = await logPlaybackHistory(userId, songId, listenedFor);
-    res.json({ message: 'Playback logged successfully', history: historyLog });
+    res.json({ success: true, message: 'Playback logged successfully', history: historyLog });
 });
 
 module.exports = {

@@ -1,0 +1,35 @@
+name: EchoBeats CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    name: Backend Test & Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js v22
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Root & Monorepo Dependencies
+        run: npm run install-all
+
+      - name: Run Backend Integration Test Suite
+        run: |
+          cd backend
+          npm test
+
+      - name: Build Frontend Client Bundle
+        run: |
+          cd frontend
+          npm run build
