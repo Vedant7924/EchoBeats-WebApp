@@ -207,43 +207,54 @@ const registerUser = asyncHandler(async (req, res) => {
 
     if (userRegistry.has(formattedEmail)) {
         res.status(409);
-        throw new Error('User with this email already exists');
+        throw new Error('An account with this email already exists. Please log in.');
     }
 
-    let newUserPayload;
+    let newUserPayload = null;
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
     if (mongoose.connection.readyState === 1) {
-        const userExists = await User.findOne({ $or: [{ email: formattedEmail }, { username: trimmedUsername }] });
-        if (userExists) {
-            res.status(409);
-            throw new Error('User with this email or username already exists');
+        try {
+            const userExists = await User.findOne({ $or: [{ email: formattedEmail }, { username: trimmedUsername }] });
+            if (userExists) {
+                res.status(409);
+                throw new Error('An account with this email or username already exists. Please log in.');
+            }
+
+            const user = await User.create({
+                username: trimmedUsername,
+                email: formattedEmail,
+                password
+            });
+
+            newUserPayload = {
+                _id: user._id.toString(),
+                username: user.username,
+                email: user.email,
+                role: user.role
+            };
+        } catch (dbErr) {
+            if (dbErr.code === 11000 || dbErr.status === 409 || (dbErr.message && dbErr.message.includes('already exists'))) {
+                res.status(409);
+                throw new Error('An account with this email or username already exists. Please log in.');
+            }
+            console.error('DB User creation error:', dbErr.message);
         }
+    }
 
-        const user = await User.create({
-            username: trimmedUsername,
-            email: formattedEmail,
-            password
-        });
-
-        newUserPayload = {
-            _id: user._id.toString(),
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            token: generateToken(user._id)
-        };
-    } else {
+    if (!newUserPayload) {
         const newId = new mongoose.Types.ObjectId().toString();
         newUserPayload = {
             _id: newId,
             username: trimmedUsername,
             email: formattedEmail,
-            role: 'user',
-            token: generateToken(newId)
+            role: 'user'
         };
     }
+
+    // Embed identity in signed token
+    newUserPayload.token = generateToken(newUserPayload);
 
     const regUser = {
         _id: newUserPayload._id,
@@ -299,9 +310,9 @@ const authUser = asyncHandler(async (req, res) => {
                         _id: user._id.toString(),
                         username: user.username,
                         email: user.email,
-                        role: user.role,
-                        token: generateToken(user._id)
+                        role: user.role
                     };
+                    payload.token = generateToken(payload);
                     registerUserInAuthMap(payload);
                     return res.json(payload);
                 }
@@ -330,9 +341,9 @@ const authUser = asyncHandler(async (req, res) => {
                 _id: regUser._id,
                 username: regUser.username,
                 email: regUser.email,
-                role: regUser.role,
-                token: generateToken(regUser._id)
+                role: regUser.role
             };
+            payload.token = generateToken(payload);
             registerUserInAuthMap(payload);
             return res.json(payload);
         }
@@ -342,9 +353,12 @@ const authUser = asyncHandler(async (req, res) => {
     if (demoAccounts[formattedEmail] && password === 'password123') {
         const demo = demoAccounts[formattedEmail];
         const payload = {
-            ...demo,
-            token: generateToken(demo._id)
+            _id: demo._id,
+            username: demo.username,
+            email: demo.email,
+            role: demo.role
         };
+        payload.token = generateToken(payload);
         registerUserInAuthMap(payload);
         return res.json(payload);
     }
@@ -452,13 +466,14 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     userRegistry.set(updatedEmail, updatedRecord);
     registerUserInAuthMap(updatedRecord);
 
-    res.json({
+    const payload = {
         _id: strUserId,
         username: updatedUsername,
         email: updatedEmail,
-        role: req.user.role || 'user',
-        token: generateToken(strUserId)
-    });
+        role: req.user.role || 'user'
+    };
+    payload.token = generateToken(payload);
+    res.json(payload);
 });
 
 // @desc    Get user liked songs

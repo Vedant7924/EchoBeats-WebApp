@@ -2,19 +2,17 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const User = require('../models/User');
 
-// Fallback user resolution store
 const demoUsersMap = {
     '650000000000000000000001': { _id: '650000000000000000000001', username: 'AdminUser', email: 'admin@example.com', role: 'admin' },
     '650000000000000000000002': { _id: '650000000000000000000002', username: 'JohnDoe', email: 'john@example.com', role: 'user' },
     '650000000000000000000003': { _id: '650000000000000000000003', username: 'JaneSmith', email: 'jane@example.com', role: 'user' }
 };
 
-// Dynamic registration registry to support any new user token resolution
 const dynamicUserMap = new Map();
 
 const registerUserInAuthMap = (user) => {
-    if (user && user._id) {
-        const strId = user._id.toString();
+    if (user && (user._id || user.id)) {
+        const strId = (user._id || user.id).toString();
         dynamicUserMap.set(strId, {
             _id: strId,
             username: user.username,
@@ -36,22 +34,33 @@ const protect = async (req, res, next) => {
             const secret = process.env.JWT_SECRET || 'this_is_a_very_secret_key_123456';
             const decoded = jwt.verify(token, secret);
 
+            // 1. Try fetching from MongoDB if connected
             if (mongoose.connection.readyState === 1) {
                 try {
-                    req.user = await User.findById(decoded.id).select('-password');
+                    const dbUser = await User.findById(decoded.id).select('-password');
+                    if (dbUser) {
+                        req.user = dbUser;
+                        return next();
+                    }
                 } catch {
                     req.user = null;
                 }
             }
 
-            if (!req.user) {
-                req.user = dynamicUserMap.get(decoded.id) || demoUsersMap[decoded.id] || {
-                    _id: decoded.id,
-                    username: 'User',
-                    email: 'user@example.com',
-                    role: 'user'
-                };
+            // 2. Try dynamic map or demo map fallback
+            const mapUser = dynamicUserMap.get(decoded.id) || demoUsersMap[decoded.id];
+            if (mapUser) {
+                req.user = mapUser;
+                return next();
             }
+
+            // 3. Fall back directly to decoded JWT token payload (Guarantees auth on Vercel cold starts)
+            req.user = {
+                _id: decoded.id,
+                username: decoded.username || 'User',
+                email: decoded.email || 'user@example.com',
+                role: decoded.role || 'user'
+            };
 
             return next();
         } catch (error) {
